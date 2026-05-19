@@ -1,0 +1,15 @@
+{
+  "template_host": "print01",
+  "hosts": {
+    "print01": {
+      "ip": "10.99.0.10",
+      "port": 8765,
+      "bearer_token": "<paste-bearer-from-windows-mcp-setup>"
+    },
+    "dc01": {
+      "ip": "10.99.0.2",
+      "port": 8765,
+      "bearer_token": "<paste-bearer-from-windows-mcp-setup>"
+    }
+  }
+}
