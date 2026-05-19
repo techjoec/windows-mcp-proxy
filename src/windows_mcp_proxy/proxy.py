@@ -31,6 +31,7 @@ from typing import Any
 import httpx
 import mcp.types as mcp_types
 from fastmcp import Client, Context, FastMCP
+from fastmcp.client.transports import StreamableHttpTransport
 from fastmcp.server.tasks.config import TaskConfig
 from fastmcp.tools.tool import Tool, ToolResult
 from pydantic import PrivateAttr
@@ -102,7 +103,7 @@ def _client_for(label: str) -> Client:
     url = f"http://{h['ip']}:{h['port']}/mcp"
     token = h.get("bearer_token")
     if token:
-        return Client(url, headers={"Authorization": f"Bearer {token}"})
+        return Client(StreamableHttpTransport(url, headers={"Authorization": f"Bearer {token}"}))
     return Client(url)
 
 
