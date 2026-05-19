@@ -40,7 +40,7 @@ uv tool install git+https://github.com/techjoec/windows-mcp-proxy.git
 
 ## Register per project
 
-In `<project>/.mcp.json`:
+Copy `examples/mcp.example.json` to `<project>/.mcp.json`:
 
 ```json
 {

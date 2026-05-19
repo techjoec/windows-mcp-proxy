@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "windows-mcp": {
+      "command": "windows-mcp-proxy"
+    }
+  }
+}

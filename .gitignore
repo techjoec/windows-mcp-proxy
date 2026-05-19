@@ -7,6 +7,9 @@ dist/
 .mypy_cache/
 .ruff_cache/
 .pytest_cache/
+.claude/
+.env
+.mcp.json
 
 # Per-project runtime config — never commit credentials
 .claude/windows-mcp-proxy/config.json
