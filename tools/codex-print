@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+inventory="$repo_root/.claude/windows-mcp-proxy/config.json"
+mcp_command="${WINDOWS_MCP_PROXY_CODEX:-$(command -v windows-mcp-proxy-codex || true)}"
+
+if [[ -z "$mcp_command" ]]; then
+  printf 'codex-print: windows-mcp-proxy-codex not found on PATH\n' >&2
+  printf 'codex-print: install windows-mcp-proxy, or set WINDOWS_MCP_PROXY_CODEX=/absolute/path/to/windows-mcp-proxy-codex\n' >&2
+  exit 1
+fi
+
+if [[ ! -f "$inventory" ]]; then
+  printf 'codex-print: inventory not found: %s\n' "$inventory" >&2
+  exit 1
+fi
+
+exec codex --yolo \
+  -C "$repo_root" \
+  -c "mcp_servers.windows.command=\"$mcp_command\"" \
+  -c "mcp_servers.windows.env.WINDOWS_MCP_PROXY_CONFIG=\"$inventory\"" \
+  "$@"

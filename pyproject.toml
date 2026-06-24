@@ -17,6 +17,8 @@ dependencies = [
 
 [project.scripts]
 windows-mcp-proxy = "windows_mcp_proxy.proxy:main"
+windows-mcp-proxy-codex = "windows_mcp_proxy.codex:main"
+windows-mcp-call = "windows_mcp_proxy.direct:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/windows_mcp_proxy"]

@@ -69,11 +69,22 @@ These are the ones that bit during build:
 
 ## Files
 
-- `src/windows_mcp_proxy/proxy.py` — the entire proxy in one file. Worth
-  keeping it that way; if it grows, split *transport*, *dispatch*, and
-  *inventory* but not before.
+- `src/windows_mcp_proxy/proxy.py` — the lazy server and shared proxy
+  mechanics. Worth keeping the core mechanics here; if it grows, split
+  *transport*, *dispatch*, and *inventory* but not before.
+- `src/windows_mcp_proxy/codex.py` — Codex-compatible eager wrapper. It
+  imports the shared helpers from `proxy.py`, discovers/registers all
+  upstream tools before stdio starts, and exposes a setup-only tool if eager
+  discovery fails.
+- `src/windows_mcp_proxy/direct.py` — `windows-mcp-call`, a direct upstream
+  debugging helper that reads the inventory, calls one tool, saves image
+  content to disk, and avoids printing bearer tokens.
+- `src/windows_mcp_proxy/uia.py` — PowerShell UI Automation scripts for the
+  proxy-owned `proxy_uia_snapshot`, `proxy_uia_action`, and
+  `proxy_treeview_snapshot` helper tools.
 - `pyproject.toml` — `windows-mcp-proxy` entry point points at
-  `proxy:main`. Pinned `fastmcp>=3.3,<4`.
+  `proxy:main`; `windows-mcp-proxy-codex` points at `codex:main`;
+  `windows-mcp-call` points at `direct:main`. Pinned `fastmcp>=3.3,<4`.
 - `README.md` — user-facing.
 - `CLAUDE.md` — this file.
 - `LICENSE` — MIT.
@@ -86,10 +97,32 @@ pattern into `tests/`.
 
 - **New tool added upstream** → call `init` again. The proxy is
   idempotent: it `remove_tool`s the previous set and re-registers.
+  For Codex, restart the MCP server/session because Codex does not consume
+  lazy tool-list updates. If Codex is stuck with only `init`, check that it
+  is registered with `windows-mcp-proxy-codex` or with
+  `WINDOWS_MCP_PROXY_EAGER=1 windows-mcp-proxy`.
 - **Tool's args change shape** → same. `template_host` is the source of
   truth.
 - **Upstream auth changes** → update `bearer_token` in `config.json`,
   re-call `init`.
+- **Fragile installer trees** → don't infer checkbox or expand/collapse state
+  from Windows-MCP text alone. Use `proxy_uia_snapshot` for stateful text
+  backed by UIA patterns, then `proxy_uia_action` for toggle/expand/collapse
+  when patterns are available. Screenshot text remains useful for labels,
+  rough coordinates, focused window, and visible buttons.
+  UIA scripts are staged through `%TEMP%\windows-mcp-proxy` in chunks to avoid
+  Windows command-line length limits.
+  If a `SysTreeView32` exposes no UIA `TogglePattern`, use
+  `proxy_treeview_snapshot`; it reads `TVIS_STATEIMAGEMASK` via native TreeView
+  messages to report checked/unchecked state.
+  Use `proxy_treeview_action` for changes. In the HP InstallShield tree tested
+  on print05, physical mouse injection from the PowerShell transport failed
+  with Win32 error 5 (`Access denied`) and no foreground window, while the
+  keyboard path (`TVM_SELECTITEM` + Space) changed and verified check state.
+  `click_method="auto"`/`"input"` reports the mouse diagnostics and falls back
+  to the verified keyboard path when the state does not change. Raw upstream
+  `Click` reported success at the native state-icon coordinate but did not
+  change the checkbox state, so verify with `proxy_treeview_snapshot`.
 
 ## Things NOT to do
 
