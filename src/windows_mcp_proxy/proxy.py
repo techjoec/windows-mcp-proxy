@@ -36,6 +36,7 @@ import uuid
 
 import httpx
 import mcp.types as mcp_types
+from mcp.shared.exceptions import McpError
 from fastmcp import Client, Context, FastMCP
 from fastmcp.client.transports import StreamableHttpTransport
 from fastmcp.server.tasks.config import TaskConfig
@@ -104,6 +105,43 @@ _TRANSPORT_ERRORS: tuple[type[BaseException], ...] = (
     httpx.RemoteProtocolError,
     ConnectionError,
 )
+
+# MCP maps an upstream response/connect timeout to error code 408.
+_MCP_TIMEOUT_CODE = 408
+
+
+def _is_retryable_transport_error(exc: BaseException) -> bool:
+    """Whether a failed upstream call deserves one reconnect+retry (and, on a
+    repeat failure, the friendly 'unable to reconnect' message).
+
+    FastMCP does not surface raw transport types at the boundary; both failure
+    modes were reproduced against a dead host:
+      - connection refused -> RuntimeError('Client failed to connect: ...')
+        whose __cause__ chain carries httpx.ConnectError
+      - connect timeout    -> McpError(code=408)
+    So we walk the cause/context/group chain for the known transport types and
+    the 408 timeout instead of matching only the outer exception type. A plain
+    ValueError or a non-timeout McpError (e.g. method-not-found) returns False
+    and is re-raised by the caller.
+    """
+    seen: set[int] = set()
+    stack: list[BaseException] = [exc]
+    while stack:
+        e = stack.pop()
+        if e is None or id(e) in seen:
+            continue
+        seen.add(id(e))
+        if isinstance(e, _TRANSPORT_ERRORS):
+            return True
+        if isinstance(e, McpError) and getattr(e.error, "code", None) == _MCP_TIMEOUT_CODE:
+            return True
+        if isinstance(e, BaseExceptionGroup):
+            stack.extend(e.exceptions)
+        if e.__cause__ is not None:
+            stack.append(e.__cause__)
+        if e.__context__ is not None:
+            stack.append(e.__context__)
+    return False
 
 
 def _timeout_client_factory(timeout_seconds: float):
@@ -549,14 +587,14 @@ class MultiHostProxyTool(Tool):
                     content=list(raw.content),
                     structured_content=raw.structuredContent,
                 )
-            except _TRANSPORT_ERRORS as e:
+            except Exception as e:
+                if not _is_retryable_transport_error(e):
+                    log.exception("upstream call failed host=%s tool=%s", host, upstream_name)
+                    raise
                 last_err = e
                 log.warning("transport error host=%s tool=%s attempt=%d err=%s",
                             host, upstream_name, attempt, e)
                 continue
-            except Exception:
-                log.exception("upstream call failed host=%s tool=%s", host, upstream_name)
-                raise
 
         ip = _config["hosts"][host]["ip"]
         log.error("giving up on %s after retry: %s", host, last_err)
@@ -1213,15 +1251,15 @@ async def init(ctx: Context) -> str:
 
     try:
         count, names = await _discover_and_register(ctx)
-    except _TRANSPORT_ERRORS as e:
-        template = _config.get("template_host")
-        ip = _config["hosts"].get(template, {}).get("ip", "?") if template else "?"
-        log.error("init: cannot reach template_host %s (%s): %s", template, ip, e)
-        return (
-            f"Could not reach template_host '{template}' ({ip}) to discover tools: {e}\n"
-            f"Confirm the windows-mcp scheduled task is running on that VM, then call `init` again."
-        )
     except Exception as e:
+        if _is_retryable_transport_error(e):
+            template = _config.get("template_host")
+            ip = _config["hosts"].get(template, {}).get("ip", "?") if template else "?"
+            log.error("init: cannot reach template_host %s (%s): %s", template, ip, e)
+            return (
+                f"Could not reach template_host '{template}' ({ip}) to discover tools: {e}\n"
+                f"Confirm the windows-mcp scheduled task is running on that VM, then call `init` again."
+            )
         log.exception("init failed")
         return f"init failed: {e}"
 
