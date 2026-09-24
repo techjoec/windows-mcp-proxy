@@ -84,8 +84,9 @@ These are the ones that bit during build:
   `proxy_treeview_snapshot` helper tools.
 - `pyproject.toml` — `windows-mcp-proxy` entry point points at
   `proxy:main`; `windows-mcp-proxy-codex` points at `codex:main`;
-  `windows-mcp-call` points at `direct:main`. Depends on `fastmcp>=3.3`
-  (unpinned upper bound; verified working on 3.4.3).
+  `windows-mcp-call` points at `direct:main`. Depends on `fastmcp>=3.3,<4`
+  (`<4` because fastmcp 4 pulls mcp 2, where `mcp.shared.exceptions.McpError`
+  is gone — `proxy.py` fails at import; the port is in `INBOX.md`).
 - `README.md` — user-facing.
 - `CLAUDE.md` — this file.
 - `LICENSE` — MIT.
