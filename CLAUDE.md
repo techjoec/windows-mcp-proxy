@@ -19,8 +19,8 @@ User-facing details + diagrams live in `README.md` — don't duplicate.
 `FastMCP("windows-mcp-proxy")` exposes a single bootstrap tool `init`. When
 the model calls `init`, the proxy reads its inventory, opens a `Client` to
 `template_host`, calls `list_tools()`, and for each upstream tool registers
-a `MultiHostProxyTool` (subclass of `fastmcp.tools.tool.Tool`) whose
-`parameters` is the upstream `inputSchema` with `host` (a string enum of
+a `MultiHostProxyTool` (subclass of `fastmcp.tools.Tool`) whose
+`parameters` is the upstream `input_schema` with `host` (a string enum of
 configured labels) injected as a required property. Then it sends
 `ToolListChangedNotification`. On call, `run()` pops `host`, opens a fresh
 `async with Client(url)` for that host, calls `call_tool_mcp(upstream_name,
