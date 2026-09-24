@@ -37,29 +37,35 @@ retry; further failure returns a fixed user-facing message.
   bearer tokens, and IP ranges. Storing inventory in `$PWD/.claude/...`
   keeps lab boundaries clean and lets the file be (optionally) committed.
 - **Stateless-http upstream.** No persistent client pool — `async with
-  Client(...)` per call is effectively free because httpx pools sockets
+  Client(...)` per call is effectively free because httpx2 pools sockets
   underneath. Reconnect == next call.
 - **Retry-once, not ping-then-call.** Ping before each call would double
   round trips for no benefit when upstream is stateless. Same failure
   surface, half the latency.
 
-## FastMCP 3.3.1 API gotchas (verified against installed source 2026-05-19)
-
-These are the ones that bit during build:
+## FastMCP 4 / mcp 2 API gotchas (verified against fastmcp 4.0.9, mcp 2.2.0)
 
 - `FunctionTool.from_function()` does **not** accept a `parameters` kwarg.
   Schemas are introspected from Python type hints. To register a tool
   whose JSON Schema is only known at runtime, **subclass `Tool` directly**
   and pass `parameters=...` to the model constructor. That's what
   `MultiHostProxyTool` does.
-- `TaskConfig` moved: import from `fastmcp.server.tasks.config`, not
-  `fastmcp.tools.tool`. The old import emits a private-import warning.
-- `Tool.run(arguments)` takes only `arguments` (no `context` kwarg in the
-  parent class). `ProxyTool.run` adds a `context=None` but the dispatcher
-  is forgiving. We match the parent signature.
+- Imports: `Tool`/`ToolResult` from `fastmcp.tools`, `TaskConfig` from
+  `fastmcp.utilities.tasks`, `MCPError` from `mcp.shared.exceptions`.
+- mcp 2 wire types are snake_case in Python (`input_schema`,
+  `structured_content`, `is_error`, `mime_type`); camelCase is only the
+  JSON alias.
+- The client transport is **`httpx2`**, not `httpx`: the
+  `httpx_client_factory` must build an `httpx2.AsyncClient`, and the
+  retryable transport errors are `httpx2.*` types.
+- Failure shapes at the `Client` boundary (reproduced): connection refused
+  -> `RuntimeError` whose cause chain carries `httpx2.ConnectError`;
+  connect timeout -> `MCPError(code=408)`. `_is_retryable_transport_error`
+  walks the chain for both.
+- `Tool.run(arguments)` takes only `arguments`. We match that signature.
 - `ctx.send_notification(mcp_types.ToolListChangedNotification())` works
-  in stdio sessions — fastmcp delivers it on the current session, which
-  is exactly what we want (1 stdio subprocess = 1 session).
+  in stdio sessions — fastmcp delivers it on the current request's stream,
+  which is exactly what we want (1 stdio subprocess = 1 session).
 - `mcp.run(show_banner=False)` is mandatory for stdio — the Rich banner
   is fine on stderr but `show_banner=True` also taints startup ordering
   in some shells.
@@ -84,9 +90,9 @@ These are the ones that bit during build:
   `proxy_treeview_snapshot` helper tools.
 - `pyproject.toml` — `windows-mcp-proxy` entry point points at
   `proxy:main`; `windows-mcp-proxy-codex` points at `codex:main`;
-  `windows-mcp-call` points at `direct:main`. Depends on `fastmcp>=3.3,<4`
-  (`<4` because fastmcp 4 pulls mcp 2, where `mcp.shared.exceptions.McpError`
-  is gone — `proxy.py` fails at import; the port is in `INBOX.md`).
+  `windows-mcp-call` points at `direct:main`. Depends on `fastmcp>=4,<5`
+  and `httpx2` (the transport mcp 2 uses; we import it for the timeout
+  factory and retry classification).
 - `README.md` — user-facing.
 - `CLAUDE.md` — this file.
 - `LICENSE` — MIT.

@@ -15,7 +15,7 @@ Design notes:
   client of the tool-list change. With WINDOWS_MCP_PROXY_EAGER=1, discovery
   happens before stdio starts for clients that do not support lazy tools.
 - No persistent client pool. Each call opens an `async with Client(...)`;
-  upstream is stateless-http so this is effectively free (httpx pools sockets).
+  upstream is stateless-http so this is effectively free (httpx2 pools sockets).
 - Retry-once on transport error, then return a fixed user-facing message.
 - All logging to /logs/windows-mcp-proxy/proxy-<pid>.log. NEVER stdout
   (that is the MCP transport).
@@ -34,13 +34,13 @@ import sys
 from typing import Any
 import uuid
 
-import httpx
+import httpx2
 import mcp.types as mcp_types
-from mcp.shared.exceptions import McpError
+from mcp.shared.exceptions import MCPError
 from fastmcp import Client, Context, FastMCP
 from fastmcp.client.transports import StreamableHttpTransport
-from fastmcp.server.tasks.config import TaskConfig
-from fastmcp.tools.tool import Tool, ToolResult
+from fastmcp.tools import Tool, ToolResult
+from fastmcp.utilities.tasks import TaskConfig
 from pydantic import PrivateAttr
 
 from windows_mcp_proxy import uia
@@ -99,10 +99,10 @@ _WMCP_BEARER_KEY = "user.windows-mcp.bearer"
 
 # Transport errors that warrant a one-shot reconnect+retry.
 _TRANSPORT_ERRORS: tuple[type[BaseException], ...] = (
-    httpx.ConnectError,
-    httpx.ConnectTimeout,
-    httpx.ReadTimeout,
-    httpx.RemoteProtocolError,
+    httpx2.ConnectError,
+    httpx2.ConnectTimeout,
+    httpx2.ReadTimeout,
+    httpx2.RemoteProtocolError,
     ConnectionError,
 )
 
@@ -117,11 +117,11 @@ def _is_retryable_transport_error(exc: BaseException) -> bool:
     FastMCP does not surface raw transport types at the boundary; both failure
     modes were reproduced against a dead host:
       - connection refused -> RuntimeError('Client failed to connect: ...')
-        whose __cause__ chain carries httpx.ConnectError
-      - connect timeout    -> McpError(code=408)
+        whose __cause__ chain carries httpx2.ConnectError
+      - connect timeout    -> MCPError(code=408)
     So we walk the cause/context/group chain for the known transport types and
     the 408 timeout instead of matching only the outer exception type. A plain
-    ValueError or a non-timeout McpError (e.g. method-not-found) returns False
+    ValueError or a non-timeout MCPError (e.g. method-not-found) returns False
     and is re-raised by the caller.
     """
     seen: set[int] = set()
@@ -133,7 +133,7 @@ def _is_retryable_transport_error(exc: BaseException) -> bool:
         seen.add(id(e))
         if isinstance(e, _TRANSPORT_ERRORS):
             return True
-        if isinstance(e, McpError) and getattr(e.error, "code", None) == _MCP_TIMEOUT_CODE:
+        if isinstance(e, MCPError) and getattr(e.error, "code", None) == _MCP_TIMEOUT_CODE:
             return True
         if isinstance(e, BaseExceptionGroup):
             stack.extend(e.exceptions)
@@ -145,9 +145,9 @@ def _is_retryable_transport_error(exc: BaseException) -> bool:
 
 
 def _timeout_client_factory(timeout_seconds: float):
-    def factory(**kwargs: Any) -> httpx.AsyncClient:
-        kwargs["timeout"] = httpx.Timeout(timeout_seconds)
-        return httpx.AsyncClient(**kwargs)
+    def factory(**kwargs: Any) -> httpx2.AsyncClient:
+        kwargs["timeout"] = httpx2.Timeout(timeout_seconds)
+        return httpx2.AsyncClient(**kwargs)
 
     return factory
 
@@ -345,7 +345,7 @@ def _command_args_for_tool(
         return args
 
     tool = _upstream_tools.get(tool_name)
-    schema = tool.inputSchema if tool else {}
+    schema = tool.input_schema if tool else {}
     properties = schema.get("properties", {}) if isinstance(schema, dict) else {}
     required = schema.get("required", []) if isinstance(schema, dict) else []
 
@@ -407,16 +407,16 @@ def _parse_first_json(text: str) -> Any | None:
 
 
 def _extract_json_payload(raw: mcp_types.CallToolResult) -> Any:
-    if raw.structuredContent is not None:
-        if isinstance(raw.structuredContent, dict):
-            if "ok" in raw.structuredContent:
-                return raw.structuredContent
-            for value in raw.structuredContent.values():
+    if raw.structured_content is not None:
+        if isinstance(raw.structured_content, dict):
+            if "ok" in raw.structured_content:
+                return raw.structured_content
+            for value in raw.structured_content.values():
                 if isinstance(value, str):
                     parsed = _parse_first_json(value)
                     if parsed is not None:
                         return parsed
-        return raw.structuredContent
+        return raw.structured_content
 
     text = _extract_text(raw)
     parsed = _parse_first_json(text)
@@ -466,7 +466,7 @@ async def _run_powershell_command(
 
 
 def _raise_on_tool_error(raw: mcp_types.CallToolResult, step: str) -> None:
-    if raw.isError:
+    if raw.is_error:
         text = _extract_text(raw)
         raise RuntimeError(f"PowerShell {step} failed: {text}")
 
@@ -585,7 +585,7 @@ class MultiHostProxyTool(Tool):
                     raw = await c.call_tool_mcp(upstream_name, args)
                 return ToolResult(
                     content=list(raw.content),
-                    structured_content=raw.structuredContent,
+                    structured_content=raw.structured_content,
                 )
             except Exception as e:
                 if not _is_retryable_transport_error(e):
@@ -681,7 +681,7 @@ def _register_proxy_tools(
     _upstream_tools.clear()
     for t in upstream_tools:
         _upstream_tools[t.name] = t
-        injected_schema = _inject_host_arg(t.inputSchema)
+        injected_schema = _inject_host_arg(t.input_schema)
         tool = MultiHostProxyTool.build(
             upstream_name=t.name,
             name=t.name,

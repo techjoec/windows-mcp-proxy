@@ -76,12 +76,12 @@ def _summarize_content(
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         path = out_dir / (
             f"windows-mcp-{_safe_part(host)}-{_safe_part(tool)}-"
-            f"{timestamp}-{index}{_extension_for_mime(content.mimeType)}"
+            f"{timestamp}-{index}{_extension_for_mime(content.mime_type)}"
         )
         path.write_bytes(raw)
         return {
             "type": "image",
-            "mimeType": content.mimeType,
+            "mimeType": content.mime_type,
             "path": str(path),
             "bytes": len(raw),
         }
@@ -108,7 +108,7 @@ async def _list_tools(host: str, timeout: float | None) -> dict[str, Any]:
             {
                 "name": tool.name,
                 "description": tool.description,
-                "inputSchema": tool.inputSchema,
+                "inputSchema": tool.input_schema,
             }
             for tool in tools
         ],
@@ -129,8 +129,8 @@ async def _call_tool(
     return {
         "host": host,
         "tool": tool,
-        "isError": result.isError,
-        "structuredContent": result.structuredContent,
+        "isError": result.is_error,
+        "structuredContent": result.structured_content,
         "content": [
             _summarize_content(
                 item,

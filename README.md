@@ -229,7 +229,7 @@ Set log level with the env var `WINDOWS_MCP_PROXY_LOG_LEVEL=DEBUG`.
 ## Multi-session safety
 
 Each Claude Code project that registers the proxy spawns its own stdio
-subprocess with its own httpx pool. Because upstream is stateless-http,
+subprocess with its own httpx2 pool. Because upstream is stateless-http,
 multiple proxy processes hitting the same VM are independent — no shared
 session state to race on.
 
