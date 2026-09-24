@@ -586,6 +586,7 @@ class MultiHostProxyTool(Tool):
                 return ToolResult(
                     content=list(raw.content),
                     structured_content=raw.structured_content,
+                    is_error=raw.is_error,
                 )
             except Exception as e:
                 if not _is_retryable_transport_error(e):

@@ -63,6 +63,8 @@ retry; further failure returns a fixed user-facing message.
   connect timeout -> `MCPError(code=408)`. `_is_retryable_transport_error`
   walks the chain for both.
 - `Tool.run(arguments)` takes only `arguments`. We match that signature.
+- Pass `is_error=raw.is_error` through `ToolResult`, or upstream tool
+  errors reach the model looking like successes.
 - `ctx.send_notification(mcp_types.ToolListChangedNotification())` works
   in stdio sessions — fastmcp delivers it on the current request's stream,
   which is exactly what we want (1 stdio subprocess = 1 session).
