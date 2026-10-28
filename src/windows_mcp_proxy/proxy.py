@@ -36,6 +36,7 @@ import uuid
 
 import httpx2
 import mcp.types as mcp_types
+from mcp.server.subscriptions import InMemorySubscriptionBus, ListenHandler, ToolsListChanged
 from mcp.shared.exceptions import MCPError
 from fastmcp import Client, Context, FastMCP
 from fastmcp.client.transports import StreamableHttpTransport
@@ -176,6 +177,18 @@ def _env_truthy(name: str) -> bool:
 # ----- runtime state ----------------------------------------------------------
 
 mcp = FastMCP("windows-mcp-proxy")
+
+# At the 2026-07-28 protocol era a tools/list_changed only reaches the client on
+# a `subscriptions/listen` stream; the same notification sent on the connection
+# is dropped by mcp 2 with a debug log. fastmcp 4 registers no listen handler,
+# so without this the server advertises no listChanged and init's new tools
+# never appear. Serving the method also flips the advertised capability on.
+_subscription_bus = InMemorySubscriptionBus()
+mcp._mcp_server.add_request_handler(
+    "subscriptions/listen",
+    mcp_types.SubscriptionsListenRequestParams,
+    ListenHandler(_subscription_bus),
+)
 _config: dict[str, Any] | None = None
 _registered_tools: list[str] = []
 _upstream_tools: dict[str, mcp_types.Tool] = {}
@@ -654,8 +667,10 @@ async def _discover_and_register(ctx: Context) -> tuple[int, list[str]]:
     _register_helper_tools(mcp, _registered_tools)
 
     # Notify the client to re-list tools so the previously-only-`init` surface
-    # gets replaced with the real tool set.
+    # gets replaced with the real tool set: on the listen stream for modern
+    # clients, on the connection for handshake-era ones.
     try:
+        await _subscription_bus.publish(ToolsListChanged())
         await ctx.send_notification(mcp_types.ToolListChangedNotification())
     except Exception:
         log.exception("could not send tool-list-changed notification (non-fatal)")
